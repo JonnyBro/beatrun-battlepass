@@ -1,37 +1,13 @@
 BRBP = BRBP or {}
 
-function BRBP.GetLang()
-	if CLIENT then
-		local override = GetConVar("brbp_lang")
-		if override then
-			local v = override:GetString()
-			if v == "ru" or v == "en" then return v end
-		end
-		local cv = GetConVar("gmod_language")
-		if cv and cv:GetString() == "ru" then return "ru" end
-		return "en"
-	end
-	return "en"
-end
-
-function BRBP.L(key, ...)
-	local pack = BRBP.Lang[BRBP.GetLang()] or BRBP.Lang.en
-	local str = pack[key] or BRBP.Lang.en[key] or key
-	if select("#", ...) > 0 then
-		return string.format(str, ...)
-	end
-	return str
-end
-
 function BRBP.QuestLabel(id, goal)
-	local lang = BRBP.GetLang()
-	local pack = BRBP.QuestNames[lang] or BRBP.QuestNames.en
-	local str = pack[id] or BRBP.QuestNames.en[id] or id
 	local shown = goal
+
 	if id == "d_play" or id == "w_play" then
 		shown = math.floor(goal / 60)
 	end
-	return string.format(str, shown)
+
+	return string.format(language.GetPhrase("beatrun_battlepass.quest." .. id), shown)
 end
 
 function BRBP.TrackEnd()
@@ -44,45 +20,45 @@ end
 
 function BRBP.GetTierForXP(xp)
 	local tier = math.floor((xp or 0) / BRBP.Config.TierXP)
+
 	return math.Clamp(tier, 0, BRBP.TrackEnd())
 end
 
 function BRBP.XPIntoTier(xp)
 	xp = xp or 0
 	local need = BRBP.Config.TierXP
+
 	if xp >= need * BRBP.TrackEnd() then
 		return need
 	end
+
 	return xp % need
 end
 
 function BRBP.SeasonAt(now)
 	now = now or os.time()
 	local best, first
+
 	for n, season in pairs(BRBP.Seasons or {}) do
 		if not first or n < first then first = n end
 		if (season.starts or 0) <= now and (not best or n > best) then best = n end
 	end
+
 	return best or first
 end
 
 function BRBP.ApplySeason(n)
 	local season = BRBP.Seasons and BRBP.Seasons[n]
+
 	if not season then return false end
+
 	BRBP.Config.Season = n
 	BRBP.Config.SeasonName = season.name
 	BRBP.Config.SeasonEnds = season.ends
 	BRBP.Config.WeekEpoch = season.starts
 	BRBP.Tiers = season.tiers
-	for lang, text in pairs(season.welcome or {}) do
-		if BRBP.Lang[lang] then BRBP.Lang[lang].welcome_body = text end
-	end
-	return true
-end
 
-function BRBP.IsSeasonActive(now)
-	now = now or os.time()
-	return now < (BRBP.Config.SeasonEnds or 0)
+	return true
 end
 
 function BRBP.DayKey(now)
@@ -92,6 +68,7 @@ end
 function BRBP.WeekKey(now)
 	now = now or os.time()
 	local origin = BRBP.Config.WeekEpoch or 0
+
 	return tostring(math.floor(math.max(0, now - origin) / 604800))
 end
 
@@ -99,12 +76,14 @@ function BRBP.SecondsUntilNextDay(now)
 	now = now or os.time()
 	local utc = os.date("!*t", now)
 	local elapsed = (utc.hour or 0) * 3600 + (utc.min or 0) * 60 + (utc.sec or 0)
+
 	return 86400 - elapsed
 end
 
 function BRBP.SecondsUntilNextWeek(now)
 	now = now or os.time()
 	local origin = BRBP.Config.WeekEpoch or 0
+
 	return 604800 - (math.max(0, now - origin) % 604800)
 end
 
@@ -113,41 +92,52 @@ function BRBP.FormatCountdown(sec)
 	local h = math.floor(sec / 3600)
 	local m = math.floor((sec % 3600) / 60)
 	local s = sec % 60
+
 	return string.format("%02d:%02d:%02d", h, m, s)
 end
 
 function BRBP.EventMatchesQuest(incoming, questEvent)
 	if incoming == questEvent then return true end
+
 	local groups = BRBP.Config.QuestEventGroups
 	local group = groups and groups[questEvent]
+
 	return group and group[incoming] == true
 end
 
 function BRBP.FindQuest(kind, id)
 	local pool = BRBP.QuestPool[kind]
+
 	if not pool then return nil end
+
 	for i = 1, #pool do
 		if pool[i].id == id then return pool[i] end
 	end
 end
 
-local function lcg(seed)
+local function Lcg(seed)
 	seed = (seed * 1103515245 + 12345) % 2147483648
+
 	return seed
 end
 
 function BRBP.BlockedEventsFromWeekly(weekly)
 	local blocked = {}
+
 	if not istable(weekly) or not istable(weekly.items) then return blocked end
+
 	for i = 1, #(weekly.items or {}) do
 		local item = weekly.items[i]
+
 		if istable(item) and not item.done then
 			local def = BRBP.FindQuest("weekly", item.id)
+
 			if def and def.event then
 				blocked[def.event] = true
 			end
 		end
 	end
+
 	return blocked
 end
 
@@ -157,8 +147,9 @@ function BRBP.PickQuests(kind, steamid, key, excludeEvents)
 	count = math.min(count, #pool)
 
 	local seed = tonumber(util.CRC((steamid or "") .. key .. tostring(BRBP.Config.Season))) or 1
+
 	for i = #pool, 2, -1 do
-		seed = lcg(seed)
+		seed = Lcg(seed)
 		local j = (seed % i) + 1
 		pool[i], pool[j] = pool[j], pool[i]
 	end
@@ -167,12 +158,14 @@ function BRBP.PickQuests(kind, steamid, key, excludeEvents)
 	local used = {}
 	local function take(q)
 		if used[q.id] then return end
+
 		used[q.id] = true
 		picked[#picked + 1] = q
 	end
 
 	for i = 1, #pool do
 		local q = pool[i]
+
 		if not (kind == "daily" and excludeEvents and excludeEvents[q.event]) then
 			take(q)
 			if #picked >= count then return picked end
@@ -183,74 +176,94 @@ function BRBP.PickQuests(kind, steamid, key, excludeEvents)
 		take(pool[i])
 		if #picked >= count then break end
 	end
+
 	return picked
 end
 
 function BRBP.HasPremiumAccess(ply, data)
 	if data and data.premium then return true end
 	if not IsValid(ply) then return false end
+
 	local group = ply:GetUserGroup() or "user"
+
 	return BRBP.Config.PremiumGroups[group] == true
 end
 
 function BRBP.RewardText(reward)
 	local kind = reward[1]
+
 	if kind == "xp" then
-		return BRBP.L("reward_xp", reward[2])
+		return string.format(language.GetPhrase("beatrun_battlepass.reward_xp"), reward[2])
 	elseif kind == "boost" then
-		return BRBP.L("reward_boost", BRBP.L("hours", math.floor(reward[2] / 3600)))
+		local hours = string.format(language.GetPhrase("beatrun_battlepass.hours"), math.floor(reward[2] / 3600))
+
+		return string.format(language.GetPhrase("beatrun_battlepass.reward_boost"), hours)
 	elseif kind == "cosmetic" then
 		local item = BRBP.Cosmetics[reward[2]]
+
 		if not item then return reward[2] end
+
 		local typeKey = ({
 			title = "reward_title",
 			trail = "trail",
 			footstep = "footstep",
-			jump = "jump",
+			jump = "jump"
 		})[item.type] or "reward_title"
 		local name = item.short or item.text or item.name
-		return BRBP.L(typeKey) .. " " .. name
+
+		return language.GetPhrase("beatrun_battlepass." .. typeKey) .. " " .. name
 	end
+
 	return tostring(kind)
 end
 
 function BRBP.TitleColor(def)
 	if not def then return Color(255, 255, 255) end
+
 	local fx = def.fx or "static"
 	local base = def.color or Color(255, 255, 255)
+
 	if fx == "rainbow" then
 		return HSVToColor((CurTime() * 90) % 360, 0.75, 1)
 	elseif fx == "hsv" then
 		local h, s, _ = ColorToHSV(base)
+
 		return HSVToColor((h + CurTime() * 70) % 360, math.max(s, 0.65), 1)
 	elseif fx == "pulse" then
 		local t = (math.sin(CurTime() * 3.2) + 1) * 0.5
+
 		return Color(
 			Lerp(t, 255, base.r),
 			Lerp(t, 255, base.g),
 			Lerp(t, 255, base.b)
 		)
 	end
+
 	return base
 end
 
 function BRBP.TitleTag(def)
 	if not def then return "" end
+
 	return "[" .. (def.text or def.name or "TITLE") .. "]"
 end
 
 function BRBP.TitleMarkup(def)
 	local tag = BRBP.TitleTag(def)
 	local fx = def.fx or "static"
+
 	if fx == "rainbow" or fx == "hsv" then
 		return "<hsv=t()*300>" .. tag .. "<stop>"
 	end
+
 	local c = def.color or Color(255, 255, 255)
+
 	return string.format("<c=%02x%02x%02x>%s<stop>", c.r, c.g, c.b, tag)
 end
 
 function BRBP.TitleHUDMarkup(id, def)
 	if not def then return "" end
+
 	return "<brbp=" .. tostring(id) .. ">" .. BRBP.TitleTag(def) .. " <stop>"
 end
 

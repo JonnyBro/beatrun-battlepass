@@ -2,7 +2,7 @@ BRBP = BRBP or {}
 
 local root = "battlepass/"
 
-local function includeFile(fileName)
+local function IncludeFile(fileName)
 	local fullPath = root .. fileName
 	local prefix = string.Left(string.lower(fileName), 3)
 
@@ -17,10 +17,10 @@ local function includeFile(fileName)
 	end
 end
 
-includeFile("sh_config.lua")
-includeFile("sh_shared.lua")
-includeFile("sv_core.lua")
-includeFile("sv_protect.lua")
-includeFile("sv_ulx.lua")
-includeFile("cl_cosmetics.lua")
-includeFile("cl_ui.lua")
+IncludeFile("sh_config.lua")
+IncludeFile("sh_shared.lua")
+IncludeFile("sv_core.lua")
+IncludeFile("sv_protect.lua")
+IncludeFile("sv_ulx.lua")
+IncludeFile("cl_cosmetics.lua")
+IncludeFile("cl_ui.lua")

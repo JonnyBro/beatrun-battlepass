@@ -13,43 +13,47 @@ util.AddNetworkString("BRBP_Open")
 util.AddNetworkString("BRBP_Request")
 util.AddNetworkString("BRBP_Claim")
 util.AddNetworkString("BRBP_Welcome")
+util.AddNetworkString("BRBP_JumpFX")
 
 local DATA_DIR = "beatrun_battlepass"
 file.CreateDir(DATA_DIR)
 
-local function sid(ply)
+local function Sid(ply)
 	return ply:SteamID64() or ply:SteamID()
 end
 
-local function pathFor(ply)
-	return DATA_DIR .. "/" .. sid(ply) .. ".json"
+local function PathFor(ply)
+	return DATA_DIR .. "/" .. Sid(ply) .. ".json"
 end
 
-local function emptyEquip()
+local function EmptyEquip()
 	return {
 		trail = "",
 		title = "",
 		footstep = "",
-		jump = "",
+		jump = ""
 	}
 end
 
-local function defaultQuestState(kind, ply, exclude)
+local function DefaultQuestState(kind, ply, exclude)
 	local key = (kind == "daily") and BRBP.DayKey() or BRBP.WeekKey()
-	local picked = BRBP.PickQuests(kind, sid(ply), key, exclude)
+	local picked = BRBP.PickQuests(kind, Sid(ply), key, exclude)
 	local items = {}
+
 	for i = 1, #picked do
 		items[i] = {
 			id = picked[i].id,
 			progress = 0,
-			done = false,
+			done = false
 		}
 	end
-	return {key = key, items = items}
+
+	return { key = key, items = items }
 end
 
-local function defaultData(ply)
-	local weekly = defaultQuestState("weekly", ply)
+local function DefaultData(ply)
+	local weekly = DefaultQuestState("weekly", ply)
+
 	return {
 		season = BRBP.Config.Season,
 		xp = 0,
@@ -57,77 +61,39 @@ local function defaultData(ply)
 		premium = false,
 		premiumGranted = 0,
 		unlocked = {},
-		equipped = emptyEquip(),
+		equipped = EmptyEquip(),
 		weekly = weekly,
-		daily = defaultQuestState("daily", ply, BRBP.BlockedEventsFromWeekly(weekly)),
+		daily = DefaultQuestState("daily", ply, BRBP.BlockedEventsFromWeekly(weekly)),
 		boostUntil = 0,
 		seen = false,
-		gen = BRBP.Config.SaveGen or 1,
+		gen = BRBP.Config.SaveGen or 1
 	}
 end
 
-local function rotateQuests(data, ply)
+local function RotateQuests(data, ply)
 	local weekChanged = data.weekly.key ~= BRBP.WeekKey()
 	local dayChanged = data.daily.key ~= BRBP.DayKey()
+
 	if weekChanged then
-		data.weekly = defaultQuestState("weekly", ply)
+		data.weekly = DefaultQuestState("weekly", ply)
 	end
+
 	if dayChanged or weekChanged then
-		data.daily = defaultQuestState("daily", ply, BRBP.BlockedEventsFromWeekly(data.weekly))
+		data.daily = DefaultQuestState("daily", ply, BRBP.BlockedEventsFromWeekly(data.weekly))
 	end
 end
 
-local function resetSeason(data, ply)
-	if data.season == BRBP.Config.Season then return data end
-	local fresh = defaultData(ply)
-	if istable(data.unlocked) then fresh.unlocked = data.unlocked end
-	if istable(data.equipped) then fresh.equipped = data.equipped end
-	return fresh
-end
-
-function BRBP.Load(ply)
-	if not IsValid(ply) or ply:IsBot() then return end
-
-	local raw = file.Read(pathFor(ply), "DATA")
-	local data = raw and util.JSONToTable(raw) or nil
-	if not istable(data) or (data.gen or 0) ~= (BRBP.Config.SaveGen or 1) then
-		data = defaultData(ply)
-	else
-		data = resetSeason(data, ply)
-		data.unlocked = data.unlocked or {}
-		data.equipped = data.equipped or emptyEquip()
-		data.weekly = data.weekly or defaultQuestState("weekly", ply)
-		data.daily = data.daily or defaultQuestState("daily", ply, BRBP.BlockedEventsFromWeekly(data.weekly))
-		rotateQuests(data, ply)
-	end
-
-	if BRBP.HasPremiumAccess(ply, data) then
-		data.premium = true
-	end
-
-	BRBP.Players[sid(ply)] = data
-	return data
-end
-
-function BRBP.Get(ply)
-	if not IsValid(ply) then return nil end
-	return BRBP.Players[sid(ply)] or BRBP.Load(ply)
-end
-
-function BRBP.Save(ply)
-	local data = BRBP.Get(ply)
-	if not data then return end
-	file.Write(pathFor(ply), util.TableToJSON(data, false))
-end
-
-local function unlockCosmetic(data, id)
+local function UnlockCosmetic(data, id)
 	if data.unlocked[id] then return false end
+
 	data.unlocked[id] = true
+
 	return true
 end
 
-local function grantReward(ply, data, reward)
+local function GrantReward(ply, data, reward)
 	local kind = reward[1]
+
 	if kind == "xp" then
 		if ply.AddXP then ply:AddXP(reward[2]) end
 	elseif kind == "boost" then
@@ -136,23 +102,116 @@ local function grantReward(ply, data, reward)
 		data.boostUntil = start + reward[2]
 		ply:SetNW2Int("BRBP_BoostUntil", data.boostUntil)
 	elseif kind == "cosmetic" then
-		unlockCosmetic(data, reward[2])
+		UnlockCosmetic(data, reward[2])
 	end
 end
 
-local function grantTrack(ply, data, track)
+local function GrantTrack(ply, data, track)
 	if not istable(track) then return end
+
 	for i = 1, #track do
-		grantReward(ply, data, track[i])
+		GrantReward(ply, data, track[i])
 	end
 end
 
-local function grantTiers(ply, data)
-	return false
+-- rewards the player reached but never pressed CLAIM for would be lost with the old season
+local function GrantLeftovers(ply, data)
+	local old = BRBP.Seasons[tonumber(data.season) or 0]
+
+	if not old or not istable(old.tiers) then return end
+
+	local cap = BRBP.Config.MaxTier + BRBP.Config.BonusTiers
+	local reached = math.min(math.floor((tonumber(data.xp) or 0) / BRBP.Config.TierXP), cap)
+	local granted = math.floor(tonumber(data.grantedTier) or 0)
+	local premGranted = math.floor(tonumber(data.premiumGranted) or 0)
+
+	for t = 1, reached do
+		local def = old.tiers[t]
+
+		if def then
+			if t > granted then GrantTrack(ply, data, def.free) end
+			if data.premium == true and t > premGranted and t <= BRBP.Config.MaxTier then
+				GrantTrack(ply, data, def.premium)
+			end
+		end
+	end
 end
+
+local function ResetSeason(data, ply)
+	if data.season == BRBP.Config.Season then return data end
+
+	if not istable(data.unlocked) then data.unlocked = {} end
+	GrantLeftovers(ply, data)
+	local fresh = DefaultData(ply)
+	fresh.unlocked = data.unlocked
+	if istable(data.equipped) then fresh.equipped = data.equipped end
+	fresh.boostUntil = math.max(tonumber(data.boostUntil) or 0, 0)
+
+	return fresh
+end
+
+function BRBP.Load(ply)
+	if not IsValid(ply) or ply:IsBot() then return end
+
+	local raw = file.Read(PathFor(ply), "DATA")
+	local data = raw and util.JSONToTable(raw) or nil
+	local changed = false
+
+	if not istable(data) or (data.gen or 0) ~= (BRBP.Config.SaveGen or 1) then
+		data = DefaultData(ply)
+	else
+		changed = data.season ~= BRBP.Config.Season
+		data = ResetSeason(data, ply)
+		data.unlocked = data.unlocked or {}
+		data.equipped = data.equipped or EmptyEquip()
+		data.weekly = data.weekly or DefaultQuestState("weekly", ply)
+		data.daily = data.daily or DefaultQuestState("daily", ply, BRBP.BlockedEventsFromWeekly(data.weekly))
+		RotateQuests(data, ply)
+	end
+
+	if BRBP.HasPremiumAccess(ply, data) then
+		data.premium = true
+	end
+
+	BRBP.Players[Sid(ply)] = data
+	-- leftover rewards were already paid out, the reset must hit the disk before anything can reload the old file
+	if changed then BRBP.Save(ply) end
+
+	return data
+end
+
+function BRBP.Get(ply)
+	if not IsValid(ply) then return nil end
+
+	return BRBP.Players[Sid(ply)] or BRBP.Load(ply)
+end
+
+local dirty = {}
+
+function BRBP.Save(ply)
+	local data = BRBP.Get(ply)
+
+	if not data then return end
+
+	dirty[Sid(ply)] = nil
+	file.Write(PathFor(ply), util.TableToJSON(data, false))
+end
+
+-- frequent progress (every parkour move, playtime, distance) is written to disk by BRBP_Flush, not on every event
+function BRBP.MarkDirty(ply)
+	if IsValid(ply) then dirty[Sid(ply)] = ply end
+end
+
+timer.Create("BRBP_Flush", 30, 0, function()
+	for id, ply in pairs(dirty) do
+		dirty[id] = nil
+		if IsValid(ply) and BRBP.Players[id] then BRBP.Save(ply) end
+	end
+end)
 
 function BRBP.ClaimTier(ply, tier)
 	local data = BRBP.Get(ply)
+
 	if not data then return false end
 
 	tier = math.floor(tonumber(tier) or 0)
@@ -162,46 +221,54 @@ function BRBP.ClaimTier(ply, tier)
 
 	data.grantedTier = tier
 	local def = BRBP.Tiers[tier]
+
 	if def then
-		grantTrack(ply, data, def.free)
+		GrantTrack(ply, data, def.free)
 		if data.premium then
 			if not BRBP.IsBonusTier(tier) then
-				grantTrack(ply, data, def.premium)
+				GrantTrack(ply, data, def.premium)
 			end
+
 			data.premiumGranted = tier
 		end
 	end
 
 	BRBP.Save(ply)
 	BRBP.Sync(ply)
+
 	return true
 end
 
-local function grantMissedPremium(ply, data)
+local function GrantMissedPremium(ply, data)
 	if not data.premium then return end
+
 	data.premiumGranted = data.premiumGranted or 0
 	for t = data.premiumGranted + 1, data.grantedTier do
 		if not BRBP.IsBonusTier(t) then
 			local def = BRBP.Tiers[t]
+
 			if def then
-				grantTrack(ply, data, def.premium)
+				GrantTrack(ply, data, def.premium)
 			end
 		end
 	end
+
 	data.premiumGranted = data.grantedTier
 end
 
 function BRBP.GivePremium(ply)
 	local data = BRBP.Get(ply)
+
 	if not data then return end
+
 	data.premium = true
-	grantMissedPremium(ply, data)
+	GrantMissedPremium(ply, data)
 	BRBP.Save(ply)
 	BRBP.Sync(ply)
 end
 
-local function applyEquipped(ply, data)
-	local eq = data.equipped or emptyEquip()
+local function ApplyEquipped(ply, data)
+	local eq = data.equipped or EmptyEquip()
 	ply:SetNW2String("BRBP_Trail", eq.trail or "")
 	ply:SetNW2String("BRBP_Title", eq.title or "")
 	ply:SetNW2String("BRBP_Footstep", eq.footstep or "")
@@ -212,8 +279,9 @@ local function applyEquipped(ply, data)
 	ply:SetNW2Bool("BRBP_Premium", data.premium and true or false)
 end
 
-local function serializeQuests(state, kind)
+local function SerializeQuests(state, kind)
 	local out = {}
+
 	for i = 1, #(state.items or {}) do
 		local item = state.items[i]
 		local def = BRBP.FindQuest(kind, item.id)
@@ -223,16 +291,19 @@ local function serializeQuests(state, kind)
 			goal = def and def.goal or 1,
 			xp = def and def.xp or 0,
 			done = item.done and true or false,
-			icon = def and def.icon or "icons/group.png",
+			icon = def and def.icon or "icons/group.png"
 		}
 	end
+
 	return out
 end
 
 function BRBP.Sync(ply)
 	local data = BRBP.Get(ply)
+
 	if not data then return end
-	applyEquipped(ply, data)
+
+	ApplyEquipped(ply, data)
 
 	local payload = {
 		xp = data.xp,
@@ -243,47 +314,54 @@ function BRBP.Sync(ply)
 		grantedTier = data.grantedTier,
 		unlocked = data.unlocked,
 		equipped = data.equipped,
-		daily = serializeQuests(data.daily, "daily"),
-		weekly = serializeQuests(data.weekly, "weekly"),
+		daily = SerializeQuests(data.daily, "daily"),
+		weekly = SerializeQuests(data.weekly, "weekly"),
 		boostUntil = data.boostUntil,
 		premiumCost = BRBP.Config.PremiumXPCost,
-		beatrunXP = ply.GetXP and ply:GetXP() or 0,
+		beatrunXP = ply.GetXP and ply:GetXP() or 0
 	}
 
 	local compressed = util.Compress(util.TableToJSON(payload) or "{}")
 	net.Start("BRBP_State")
-	net.WriteUInt(#compressed, 16)
-	net.WriteData(compressed, #compressed)
+		net.WriteUInt(#compressed, 16)
+		net.WriteData(compressed, #compressed)
 	net.Send(ply)
 end
 
 function BRBP.AddXP(ply, amount)
 	local data = BRBP.Get(ply)
+
 	if not data or amount <= 0 then return end
+
 	local before = BRBP.GetTierForXP(data.xp)
 	data.xp = math.min(data.xp + math.floor(amount), BRBP.Config.TierXP * BRBP.TrackEnd())
 	local after = BRBP.GetTierForXP(data.xp)
 	ply:SetNW2Int("BRBP_XP", data.xp)
 	ply:SetNW2Int("BRBP_Tier", after)
 	if after > before then
-		applyEquipped(ply, data)
+		ApplyEquipped(ply, data)
 		net.Start("BRBP_Toast")
-		net.WriteUInt(2, 2)
-		net.WriteUInt(after, 8)
-		net.WriteUInt(0, 16)
+			net.WriteUInt(2, 2)
+			net.WriteUInt(after, 8)
+			net.WriteUInt(0, 16)
 		net.Send(ply)
 		BRBP.Sync(ply)
 	end
 end
 
-local function bumpQuestList(ply, data, kind, event, amount)
+local function BumpQuestList(ply, data, kind, event, amount)
 	local state = data[kind]
+
 	if not state then return false end
+
 	local changed = false
+
 	for i = 1, #(state.items or {}) do
 		local item = state.items[i]
+
 		if not item.done then
 			local def = BRBP.FindQuest(kind, item.id)
+
 			if def and BRBP.EventMatchesQuest(event, def.event) then
 				item.progress = math.min((item.progress or 0) + amount, def.goal)
 				if item.progress >= def.goal then
@@ -291,31 +369,36 @@ local function bumpQuestList(ply, data, kind, event, amount)
 					item.progress = def.goal
 					BRBP.AddXP(ply, def.xp)
 					net.Start("BRBP_Toast")
-					net.WriteUInt(0, 2)
-					net.WriteUInt(0, 8)
-					net.WriteUInt(def.xp, 16)
+						net.WriteUInt(0, 2)
+						net.WriteUInt(0, 8)
+						net.WriteUInt(def.xp, 16)
 					net.Send(ply)
 				end
+
 				changed = true
 			end
 		end
 	end
+
 	return changed
 end
 
 function BRBP.Progress(ply, event, amount)
 	if not IsValid(ply) or ply:IsBot() then return end
+
 	amount = amount or 1
 	local data = BRBP.Get(ply)
+
 	if not data then return end
 
-	rotateQuests(data, ply)
+	RotateQuests(data, ply)
 
-	local d = bumpQuestList(ply, data, "daily", event, amount)
-	local w = bumpQuestList(ply, data, "weekly", event, amount)
+	local d = BumpQuestList(ply, data, "daily", event, amount)
+	local w = BumpQuestList(ply, data, "weekly", event, amount)
+
 	if not d and not w then return end
 
-	BRBP.Save(ply)
+	BRBP.MarkDirty(ply)
 	BRBP.Sync(ply)
 end
 
@@ -327,55 +410,71 @@ local vaultState = {}
 local VAULT_EVENTS = {
 	vault = true,
 	vaultover = true,
-	vaultkong = true,
+	vaultkong = true
+}
+local JUMP_FX_EVENTS = {
+	vault = true,
+	coil = true,
+	roll = true
 }
 local DIVE_EVENTS = {
 	divestart = true,
-	diveidle = true,
+	diveidle = true
 }
 
-local function acceptParkour(ply, event, trusted)
+local function AcceptParkour(ply, event, trusted)
 	if not IsValid(ply) or ply:IsBot() then return end
 	if not ply:Alive() then return end
 	if ply:GetMoveType() == MOVETYPE_NOCLIP then return end
 	if not isstring(event) or not BRBP.Config.ParkourBPXP[event] then return end
 	if not trusted and BRBP.ParkourRefuse and BRBP.ParkourRefuse(ply, event) then return end
 
-	local id = sid(ply)
+	local id = Sid(ply)
 	local now = CurTime()
 	lastParkour[id] = lastParkour[id] or {}
 
 	local groupKey = VAULT_EVENTS[event] and "_vault" or (DIVE_EVENTS[event] and "_dive" or event)
+
 	if now - (lastParkour[id][groupKey] or 0) < BRBP.Config.ParkourEventCooldown then return end
+
 	lastParkour[id][groupKey] = now
 	lastParkour[id][event] = now
 
 	if not trusted then
-		parkourWindow[id] = parkourWindow[id] or {t = now, n = 0}
+		parkourWindow[id] = parkourWindow[id] or { t = now, n = 0 }
 		if now - parkourWindow[id].t >= 1 then
-			parkourWindow[id] = {t = now, n = 0}
+			parkourWindow[id] = { t = now, n = 0 }
 		end
+
 		parkourWindow[id].n = parkourWindow[id].n + 1
 		if parkourWindow[id].n > BRBP.Config.MaxParkourEventsPerSec then return end
 	end
 
+	if JUMP_FX_EVENTS[event] and ply:GetNW2String("BRBP_Jump", "") ~= "" then
+		net.Start("BRBP_JumpFX")
+			net.WriteEntity(ply)
+		net.SendPVS(ply:GetPos())
+	end
+
 	local data = BRBP.Get(ply)
+
 	if not data then return end
 
 	local beforeTier = data.grantedTier
 	local bp = BRBP.Config.ParkourBPXP[event] or 0
+
 	if bp > 0 then
 		BRBP.AddXP(ply, bp)
 	end
 
-	rotateQuests(data, ply)
-	local d = bumpQuestList(ply, data, "daily", event, 1)
-	local w = bumpQuestList(ply, data, "weekly", event, 1)
-	local p = bumpQuestList(ply, data, "weekly", "parkour", 1)
-	local p2 = bumpQuestList(ply, data, "daily", "parkour", 1)
+	RotateQuests(data, ply)
+	local d = BumpQuestList(ply, data, "daily", event, 1)
+	local w = BumpQuestList(ply, data, "weekly", event, 1)
+	local p = BumpQuestList(ply, data, "weekly", "parkour", 1)
+	local p2 = BumpQuestList(ply, data, "daily", "parkour", 1)
 
-	applyEquipped(ply, data)
-	BRBP.Save(ply)
+	ApplyEquipped(ply, data)
+	BRBP.MarkDirty(ply)
 	if d or w or p or p2 or data.grantedTier > beforeTier then
 		BRBP.Sync(ply)
 	end
@@ -383,32 +482,40 @@ end
 
 net.Receive("BRBP_Parkour", function(_, ply)
 	local event = net.ReadString()
+
 	if not isstring(event) or #event > 32 then return end
-	acceptParkour(ply, event, VAULT_EVENTS[event] or DIVE_EVENTS[event])
+
+	AcceptParkour(ply, event, VAULT_EVENTS[event] or DIVE_EVENTS[event])
 end)
 
 hook.Add("OnParkour", "BRBP_ServerParkour", function(event, ply)
 	if not IsValid(ply) then return end
 	if not VAULT_EVENTS[event] and not DIVE_EVENTS[event] then return end
-	acceptParkour(ply, event, true)
+
+	AcceptParkour(ply, event, true)
 end)
 
 hook.Add("Think", "BRBP_DetectDiveVault", function()
 	for _, ply in ipairs(player.GetAll()) do
 		if IsValid(ply) and not ply:IsBot() then
-			local id = sid(ply)
+			local id = Sid(ply)
+
 			if ply:Alive() and ply:GetMoveType() ~= MOVETYPE_NOCLIP then
 				local diving = ply.GetDive and ply:GetDive()
+
 				if diving and not diveState[id] then
-					acceptParkour(ply, "divestart", true)
+					AcceptParkour(ply, "divestart", true)
 				end
+
 				diveState[id] = diving and true or false
 
 				local mantle = ply.GetMantle and ply:GetMantle() or 0
 				local vaulting = mantle == 2 or mantle == 3
+
 				if vaulting and not vaultState[id] then
-					acceptParkour(ply, mantle == 3 and "vaultkong" or "vault", true)
+					AcceptParkour(ply, mantle == 3 and "vaultkong" or "vault", true)
 				end
+
 				vaultState[id] = vaulting
 			else
 				diveState[id] = false
@@ -420,42 +527,55 @@ end)
 
 net.Receive("BRBP_Equip", function(_, ply)
 	if BRBP.TooFast and BRBP.TooFast(ply, "eq", 0.12) then return end
+
 	local slot = net.ReadString()
 	local id = net.ReadString()
+
 	if not isstring(slot) or not isstring(id) then return end
 	if #slot > 16 or #id > 40 then return end
+
 	local data = BRBP.Get(ply)
+
 	if not data then return end
 
 	local allowed = {
 		trail = true,
 		title = true,
 		footstep = true,
-		jump = true,
+		jump = true
 	}
 	if not allowed[slot] then return end
 
 	if id ~= "" then
 		local item = BRBP.Cosmetics[id]
+
 		if not item or item.type ~= slot then return end
 		if not data.unlocked[id] then return end
 	end
 
 	data.equipped[slot] = id
-	applyEquipped(ply, data)
+	ApplyEquipped(ply, data)
 	BRBP.Save(ply)
 	BRBP.Sync(ply)
 end)
 
 net.Receive("BRBP_BuyPremium", function(_, ply)
 	if BRBP.TooFast and BRBP.TooFast(ply, "buy", 1.5) then return end
+
 	local data = BRBP.Get(ply)
+
 	if not data or data.premium then return end
 
 	local have = ply.GetXP and ply:GetXP() or 0
 	local cost = BRBP.Config.PremiumXPCost
+
 	if have < cost then
-		ply:ChatPrint(BRBP.L("need_xp"))
+		net.Start("BRBP_Toast")
+			net.WriteUInt(3, 2)
+			net.WriteUInt(0, 8)
+			net.WriteUInt(0, 16)
+		net.Send(ply)
+
 		return
 	end
 
@@ -466,23 +586,28 @@ end)
 
 net.Receive("BRBP_Claim", function(_, ply)
 	if not IsValid(ply) then return end
+
 	BRBP.ClaimTier(ply, net.ReadUInt(8))
 end)
 
 net.Receive("BRBP_Request", function(_, ply)
 	if BRBP.TooFast and BRBP.TooFast(ply, "sync", 0.4) then return end
+
 	BRBP.Sync(ply)
 end)
 
-local function initPlayer(ply)
+local function InitPlayer(ply)
 	local data = BRBP.Load(ply)
+
 	if not data then return end
+
 	if data.premium or BRBP.HasPremiumAccess(ply, data) then
 		BRBP.GivePremium(ply)
 	else
-		applyEquipped(ply, data)
+		ApplyEquipped(ply, data)
 		BRBP.Sync(ply)
 	end
+
 	if not data.seen then
 		data.seen = true
 		BRBP.Save(ply)
@@ -494,17 +619,20 @@ end
 hook.Add("PlayerInitialSpawn", "BRBP_Join", function(ply)
 	timer.Simple(2, function()
 		if not IsValid(ply) then return end
-		initPlayer(ply)
+
+		InitPlayer(ply)
 	end)
 end)
 
 timer.Create("BRBP_SeasonWatch", 30, 0, function()
 	local n = BRBP.SeasonAt()
+
 	if n == BRBP.Config.Season then return end
 
 	local online = {}
+
 	for _, ply in ipairs(player.GetHumans()) do
-		if BRBP.Players[sid(ply)] then
+		if BRBP.Players[Sid(ply)] then
 			BRBP.Save(ply)
 			online[#online + 1] = ply
 		end
@@ -513,12 +641,12 @@ timer.Create("BRBP_SeasonWatch", 30, 0, function()
 	BRBP.ApplySeason(n)
 	BRBP.Players = {}
 	for i = 1, #online do
-		if IsValid(online[i]) then initPlayer(online[i]) end
+		if IsValid(online[i]) then InitPlayer(online[i]) end
 	end
 end)
 
 hook.Add("PlayerDisconnected", "BRBP_Leave", function(ply)
-	local id = sid(ply)
+	local id = Sid(ply)
 	BRBP.Save(ply)
 	BRBP.Players[id] = nil
 	lastParkour[id] = nil
@@ -535,10 +663,12 @@ end)
 
 hook.Add("PlayerSay", "BRBP_Chat", function(ply, text)
 	local cmd = string.lower(string.Trim(text or ""))
+
 	if BRBP.Config.ChatCommands[cmd] then
 		net.Start("BRBP_Open")
 		net.Send(ply)
 		BRBP.Sync(ply)
+
 		return ""
 	end
 end)
@@ -554,6 +684,7 @@ timer.Create("BRBP_Tick", 1, 0, function()
 	for _, ply in ipairs(player.GetAll()) do
 		if IsValid(ply) and not ply:IsBot() and ply:Alive() and ply:GetMoveType() ~= MOVETYPE_NOCLIP then
 			local data = BRBP.Get(ply)
+
 			if data then
 				local ang = ply:EyeAngles()
 				local prevAng = lastAng[ply] or ang
@@ -577,6 +708,7 @@ timer.Create("BRBP_Tick", 1, 0, function()
 				lastPos[ply] = pos
 				if prev then
 					local dist = pos:Distance(prev)
+
 					if dist > 8 and dist < 1200 then
 						local meters = dist / 52.49
 						distAccum[ply] = (distAccum[ply] or 0) + meters
@@ -584,6 +716,7 @@ timer.Create("BRBP_Tick", 1, 0, function()
 							BRBP.Progress(ply, "distance", math.floor(distAccum[ply]))
 							distAccum[ply] = distAccum[ply] - math.floor(distAccum[ply])
 						end
+
 						if ply.GetGrappling and ply:GetGrappling() then
 							grappleAccum[ply] = (grappleAccum[ply] or 0) + meters
 							if grappleAccum[ply] >= 25 then
@@ -601,14 +734,17 @@ end)
 hook.Add("PlayerSpawn", "BRBP_SpawnCosmetics", function(ply)
 	timer.Simple(0.2, function()
 		if not IsValid(ply) then return end
+
 		local data = BRBP.Get(ply)
-		if data then applyEquipped(ply, data) end
+
+		if data then ApplyEquipped(ply, data) end
 	end)
 end)
 
 local courseWrapped = false
-local function wrapFinishCourse()
+local function WrapFinishCourse()
 	if courseWrapped or not isfunction(FinishCourse) then return end
+
 	local old = FinishCourse
 	FinishCourse = function(ply)
 		old(ply)
@@ -616,18 +752,20 @@ local function wrapFinishCourse()
 			BRBP.Progress(ply, "course", 1)
 		end
 	end
+
 	courseWrapped = true
 end
 
 hook.Add("InitPostEntity", "BRBP_WrapCourse", function()
-	wrapFinishCourse()
-	timer.Simple(2, wrapFinishCourse)
+	WrapFinishCourse()
+	timer.Simple(2, WrapFinishCourse)
 end)
 
-local function xpForLevel(level)
+local function XpForLevel(level)
 	if isfunction(CalcXPForNextLevel) then
 		return CalcXPForNextLevel(level)
 	end
+
 	return math.Round(0.25 * level ^ 3 + 0.8 * level ^ 2 + 2 * level)
 end
 
@@ -637,18 +775,22 @@ function BRBP.RecalcBeatrunLevel(ply)
 
 	local steamID = ply:SteamID()
 	local info = BEATRUN_PLAYERS_XP[steamID]
+
 	if not info then return end
 
 	info.xp = math.max(0, math.Round(tonumber(info.xp) or 0))
 
 	local level = math.max(1, math.floor(tonumber(info.level) or 1))
+
 	while level > 1 do
-		if info.xp >= xpForLevel(level - 1) then break end
+		if info.xp >= XpForLevel(level - 1) then break end
 		level = level - 1
 	end
+
 	while true do
-		local lo = xpForLevel(level - 1)
-		local hi = xpForLevel(level)
+		local lo = XpForLevel(level - 1)
+		local hi = XpForLevel(level)
+
 		if hi == lo then break end
 		if (info.xp - lo) / (hi - lo) < 1 then break end
 		level = level + 1
@@ -670,19 +812,26 @@ end
 
 hook.Add("InitPostEntity", "BRBP_WrapAddXP", function()
 	local meta = FindMetaTable("Player")
+
 	if not meta or meta.BRBP_AddXPWrapped then return end
+
 	local old = meta.AddXP
+
 	if not isfunction(old) then return end
 
 	function meta:AddXP(xp)
-		local data = BRBP.Players[sid(self)]
+		local data = BRBP.Players[Sid(self)]
+
 		if data and data.boostUntil and os.time() < data.boostUntil and (xp or 0) > 0 then
 			xp = math.Round(xp * (BRBP.Config.BoostMult or 1.25))
 		end
+
 		local result = old(self, xp)
+
 		if (xp or 0) < 0 then
 			BRBP.RecalcBeatrunLevel(self)
 		end
+
 		return result
 	end
 
@@ -691,8 +840,10 @@ end)
 
 concommand.Add("brbp_give", function(ply, _, args)
 	if IsValid(ply) and not ply:IsSuperAdmin() then return end
+
 	local target = ply
 	local xp = tonumber(args[#args]) or 750
+
 	if args[1] and not tonumber(args[1]) then
 		for _, v in ipairs(player.GetAll()) do
 			if string.find(string.lower(v:Nick()), string.lower(args[1]), 1, true) then
@@ -701,7 +852,9 @@ concommand.Add("brbp_give", function(ply, _, args)
 			end
 		end
 	end
+
 	if not IsValid(target) then return end
+
 	BRBP.AddXP(target, xp)
 	BRBP.Save(target)
 	BRBP.Sync(target)
@@ -709,7 +862,9 @@ end)
 
 concommand.Add("brbp_premium", function(ply, _, args)
 	if IsValid(ply) and not ply:IsSuperAdmin() then return end
+
 	local target = ply
+
 	if args[1] and args[1] ~= "" then
 		for _, v in ipairs(player.GetAll()) do
 			if string.find(string.lower(v:Nick()), string.lower(args[1]), 1, true) then
@@ -718,6 +873,8 @@ concommand.Add("brbp_premium", function(ply, _, args)
 			end
 		end
 	end
+
 	if not IsValid(target) then return end
+
 	BRBP.GivePremium(target)
 end)

@@ -19,3 +19,6 @@ resource.AddSingleFile("sound/brbp_sounds/battlepass_button_close_click.wav")
 resource.AddSingleFile("sound/brbp_sounds/battlepass_clicksound.ogg")
 resource.AddSingleFile("sound/brbp_sounds/battlepass_closed.mp3")
 resource.AddSingleFile("sound/brbp_sounds/battlepass_opened.mp3")
+
+resource.AddSingleFile("resource/localization/en/beatrun_battlepass.properties")
+resource.AddSingleFile("resource/localization/ru/beatrun_battlepass.properties")
