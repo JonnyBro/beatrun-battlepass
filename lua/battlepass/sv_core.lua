@@ -267,6 +267,32 @@ function BRBP.GivePremium(ply)
 	BRBP.Sync(ply)
 end
 
+-- premiumGranted is kept, so giving premium back later doesn't pay out the same tiers twice
+function BRBP.RemovePremium(ply)
+	local data = BRBP.Get(ply)
+
+	if not data then return false end
+
+	data.premium = false
+	BRBP.Save(ply)
+	BRBP.Sync(ply)
+
+	return not data.premium
+end
+
+function BRBP.SetTier(ply, tier)
+	local data = BRBP.Get(ply)
+
+	if not data then return end
+
+	tier = math.Clamp(math.floor(tonumber(tier) or 0), 0, BRBP.TrackEnd())
+	data.xp = tier * BRBP.Config.TierXP
+	data.grantedTier = math.min(data.grantedTier or 0, tier)
+	data.premiumGranted = math.min(data.premiumGranted or 0, data.grantedTier)
+	BRBP.Save(ply)
+	BRBP.Sync(ply)
+end
+
 local function ApplyEquipped(ply, data)
 	local eq = data.equipped or EmptyEquip()
 	ply:SetNW2String("BRBP_Trail", eq.trail or "")
@@ -838,11 +864,21 @@ hook.Add("InitPostEntity", "BRBP_WrapAddXP", function()
 	meta.BRBP_AddXPWrapped = true
 end)
 
+local function LogAdmin(ply, text)
+	local who = IsValid(ply) and string.format("%s (%s)", ply:Nick(), ply:SteamID()) or "Console"
+
+	ServerLog(string.format("[BRBP] %s %s\n", who, text))
+end
+
+local function TargetName(target)
+	return string.format("%s (%s)", target:Nick(), target:SteamID())
+end
+
 concommand.Add("brbp_give", function(ply, _, args)
 	if IsValid(ply) and not ply:IsSuperAdmin() then return end
 
 	local target = ply
-	local xp = tonumber(args[#args]) or 750
+	local xp = math.floor(tonumber(args[#args]) or 750)
 
 	if args[1] and not tonumber(args[1]) then
 		for _, v in ipairs(player.GetAll()) do
@@ -858,6 +894,7 @@ concommand.Add("brbp_give", function(ply, _, args)
 	BRBP.AddXP(target, xp)
 	BRBP.Save(target)
 	BRBP.Sync(target)
+	LogAdmin(ply, string.format("gave %s %d battle pass XP", TargetName(target), xp))
 end)
 
 concommand.Add("brbp_premium", function(ply, _, args)
@@ -877,4 +914,5 @@ concommand.Add("brbp_premium", function(ply, _, args)
 	if not IsValid(target) then return end
 
 	BRBP.GivePremium(target)
+	LogAdmin(ply, "unlocked premium battle pass for " .. TargetName(target))
 end)
