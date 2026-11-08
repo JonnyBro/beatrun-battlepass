@@ -264,16 +264,21 @@ local function HideScrollerButtons(scroller)
 	end
 end
 
+local function MaxOffset(scroller)
+	local canvas = scroller.pnlCanvas
+
+	if not IsValid(canvas) then return 0 end
+
+	return math.max(0, canvas:GetWide() - scroller:GetWide())
+end
+
+local function SetOffset(scroller, x)
+	scroller.OffsetX = math.Clamp(x, 0, MaxOffset(scroller))
+	scroller:InvalidateLayout(true)
+end
+
 local function HookPassDrag(scroller)
 	local drag = { active = false, moved = false, startX = 0, startOff = 0 }
-
-	local function maxOff()
-		local canvas = scroller.pnlCanvas
-
-		if not IsValid(canvas) then return 0 end
-
-		return math.max(0, canvas:GetWide() - scroller:GetWide())
-	end
 
 	local function stopDrag()
 		if not drag.active then return end
@@ -339,8 +344,7 @@ local function HookPassDrag(scroller)
 		end
 
 		if drag.moved then
-			self.OffsetX = math.Clamp(drag.startOff - dx, 0, maxOff())
-			self:InvalidateLayout(true)
+			SetOffset(self, drag.startOff - dx)
 		end
 	end
 
@@ -480,10 +484,84 @@ local function TierCard(i)
 	return card
 end
 
+local function MakeHScrollBar(parent, scroller)
+	local bar = parent:Add("DPanel")
+	bar:Dock(BOTTOM)
+	bar:SetTall(S(10))
+	bar:DockMargin(0, S(10), 0, 0)
+	bar:SetCursor("hand")
+
+	local function thumb(w)
+		local maxOff = MaxOffset(scroller)
+		local view = scroller:GetWide()
+		local tw = math.max(math.floor(w * view / math.max(view + maxOff, 1)), S(40))
+		local x = maxOff > 0 and math.floor((w - tw) * (scroller.OffsetX or 0) / maxOff) or 0
+
+		return x, tw
+	end
+
+	local function dragTo(self, mx)
+		local _, tw = thumb(self:GetWide())
+
+		SetOffset(scroller, (mx - self.grab) / math.max(self:GetWide() - tw, 1) * MaxOffset(scroller))
+	end
+
+	bar.Paint = function(self, w, h)
+		if MaxOffset(scroller) <= 0 then return end
+
+		local th = Theme()
+		local x, tw = thumb(w)
+
+		draw.RoundedBox(S(th.radius), 0, 0, w, h, th.panels.secondary)
+		draw.RoundedBox(S(th.radius), x, 0, tw, h, (self.grab or self:IsHovered()) and th.accent or th.primary)
+	end
+
+	-- a click on the track centres the thumb under the cursor and keeps dragging from there
+	bar.OnMousePressed = function(self, code)
+		if code ~= MOUSE_LEFT then return end
+
+		local mx = self:CursorPos()
+		local x, tw = thumb(self:GetWide())
+
+		if mx < x or mx > x + tw then
+			self.grab = tw / 2
+			dragTo(self, mx)
+		else
+			self.grab = mx - x
+		end
+
+		self:MouseCapture(true)
+	end
+
+	bar.OnMouseReleased = function(self)
+		self.grab = nil
+		self:MouseCapture(false)
+	end
+
+	bar.Think = function(self)
+		if not self.grab then return end
+
+		if not input.IsMouseDown(MOUSE_LEFT) then
+			self:OnMouseReleased()
+
+			return
+		end
+
+		dragTo(self, self:CursorPos())
+	end
+
+	bar.OnMouseWheeled = function(_, delta)
+		return scroller:OnMouseWheeled(delta)
+	end
+end
+
 local function BuildPass(parent)
 	BuildPassHeader(parent)
 
-	local scroller = parent:Add("DHorizontalScroller")
+	-- the bar is docked before the scroller so FILL leaves room for it
+	local scroller = vgui.Create("DHorizontalScroller")
+	MakeHScrollBar(parent, scroller)
+	scroller:SetParent(parent)
 	scroller:Dock(FILL)
 	scroller:SetOverlap(-S(8))
 	HideScrollerButtons(scroller)
@@ -515,6 +593,12 @@ local function BuildPass(parent)
 		end
 
 		if prevLayout then prevLayout(self, w, h) end
+	end
+
+	scroller.OnMouseWheeled = function(self, delta)
+		SetOffset(self, (self.OffsetX or 0) - delta * step)
+
+		return true
 	end
 
 	HookPassDrag(scroller)
