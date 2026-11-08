@@ -44,7 +44,7 @@ end
 
 local setlevel = ulx.command(CATEGORY_NAME, "ulx brbpsetlevel", ulx.brbpsetlevel, "!brbpsetlevel")
 setlevel:addParam{ type = ULib.cmds.PlayersArg }
-setlevel:addParam{ type = ULib.cmds.NumArg, min = 0, max = BRBP and BRBP.TrackEnd and BRBP.TrackEnd() or 40, hint = "level", ULib.cmds.round }
+setlevel:addParam{ type = ULib.cmds.NumArg, min = 0, max = BRBP and BRBP.TrackEnd and BRBP.TrackEnd() or 60, hint = "level", ULib.cmds.round }
 setlevel:defaultAccess(ULib.ACCESS_SUPERADMIN)
 setlevel:help("Set battle pass level (XP is set to the start of that level).")
 

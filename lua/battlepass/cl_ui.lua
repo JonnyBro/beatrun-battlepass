@@ -357,8 +357,6 @@ local function HookPassDrag(scroller)
 end
 
 local function BuildPassHeader(parent)
-	local need = BRBP.Config.TierXP
-
 	local header = parent:Add("DPanel")
 	header:Dock(TOP)
 	header:SetTall(S(76))
@@ -370,7 +368,7 @@ local function BuildPassHeader(parent)
 
 		local xp = LiveXP()
 		local tier = math.min(BRBP.GetTierForXP(xp), BRBP.TrackEnd())
-		local into = BRBP.XPIntoTier(xp)
+		local into, need = BRBP.XPIntoTier(xp)
 		local x = S(20)
 		local level = string.format(language.GetPhrase("beatrun_battlepass.level"), tier)
 		draw.SimpleText(level, "BeatrunUILarge", x, h / 2, th.text.primary, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
@@ -585,6 +583,22 @@ local function QuestColumn(parent, kind)
 
 	for i = 1, #(State()[kind] or {}) do
 		QuestRow(scroll, kind, i)
+	end
+
+	if kind == "daily" then
+		local cap = scroll:Add("DPanel")
+		cap:Dock(TOP)
+		cap:SetTall(S(36))
+		cap:DockMargin(0, S(6), 0, 0)
+		cap.Paint = function(_, w, h)
+			local th = Theme()
+			local st = State()
+			local got, max = st.parkourXP or 0, st.parkourCap or BRBP.Config.ParkourDailyCap
+			local text = string.format(language.GetPhrase("beatrun_battlepass.parkour_today"), got, max)
+
+			draw.SimpleText(text, "AEUIDefault", 0, 0, got >= max and col.green or th.text.muted)
+			DrawBar(0, h - S(8), w, S(4), got / math.max(max, 1), got >= max and col.green or nil)
+		end
 	end
 
 	return column

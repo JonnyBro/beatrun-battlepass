@@ -194,8 +194,10 @@ local function TidyGear(data)
 end
 
 local function Polish(data, ply)
-	local cap = BRBP.Config.TierXP * BRBP.TrackEnd()
+	local cap = BRBP.MaxXP()
 	data.xp = math.Clamp(math.floor(tonumber(data.xp) or 0), 0, cap)
+	data.parkourDay = isstring(data.parkourDay) and data.parkourDay or ""
+	data.parkourXP = math.Clamp(math.floor(tonumber(data.parkourXP) or 0), 0, BRBP.Config.ParkourDailyCap)
 	data.season = math.floor(tonumber(data.season) or BRBP.Config.Season)
 
 	local reached = BRBP.GetTierForXP(data.xp)

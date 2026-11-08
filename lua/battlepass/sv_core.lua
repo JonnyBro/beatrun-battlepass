@@ -51,6 +51,8 @@ local function DefaultQuestState(kind, ply, exclude)
 	return { key = key, items = items }
 end
 
+local XP_CURVE = 2
+
 local function DefaultData(ply)
 	local weekly = DefaultQuestState("weekly", ply)
 
@@ -66,8 +68,25 @@ local function DefaultData(ply)
 		daily = DefaultQuestState("daily", ply, BRBP.BlockedEventsFromWeekly(weekly)),
 		boostUntil = 0,
 		seen = false,
+		parkourDay = "",
+		parkourXP = 0,
+		curve = XP_CURVE,
 		gen = BRBP.Config.SaveGen or 1
 	}
+end
+
+-- saves before curve 2 used a flat 750 XP per tier on a 30 + 10 track; keep the player's tier number and
+-- progress inside it. Tiers 31-40 were bonus tiers then and hold real rewards now, so they can be claimed again
+local function MigrateCurve(data)
+	local oldCost = 750
+	local xp = math.max(tonumber(data.xp) or 0, 0)
+	local tier = math.min(math.floor(xp / oldCost), BRBP.TrackEnd())
+	local frac = tier < BRBP.TrackEnd() and (xp - tier * oldCost) / oldCost or 0
+
+	data.xp = BRBP.XPForTier(tier) + math.floor(frac * BRBP.TierCost(tier + 1))
+	data.grantedTier = math.min(tonumber(data.grantedTier) or 0, 30)
+	data.premiumGranted = math.min(tonumber(data.premiumGranted) or 0, 30)
+	data.curve = XP_CURVE
 end
 
 local function RotateQuests(data, ply)
@@ -120,8 +139,7 @@ local function GrantLeftovers(ply, data)
 
 	if not old or not istable(old.tiers) then return end
 
-	local cap = BRBP.Config.MaxTier + BRBP.Config.BonusTiers
-	local reached = math.min(math.floor((tonumber(data.xp) or 0) / BRBP.Config.TierXP), cap)
+	local reached = BRBP.GetTierForXP(tonumber(data.xp) or 0)
 	local granted = math.floor(tonumber(data.grantedTier) or 0)
 	local premGranted = math.floor(tonumber(data.premiumGranted) or 0)
 
@@ -160,7 +178,12 @@ function BRBP.Load(ply)
 	if not istable(data) or (data.gen or 0) ~= (BRBP.Config.SaveGen or 1) then
 		data = DefaultData(ply)
 	else
-		changed = data.season ~= BRBP.Config.Season
+		if (tonumber(data.curve) or 1) < XP_CURVE then
+			MigrateCurve(data)
+			changed = true
+		end
+
+		changed = changed or data.season ~= BRBP.Config.Season
 		data = ResetSeason(data, ply)
 		data.unlocked = data.unlocked or {}
 		data.equipped = data.equipped or EmptyEquip()
@@ -286,7 +309,7 @@ function BRBP.SetTier(ply, tier)
 	if not data then return end
 
 	tier = math.Clamp(math.floor(tonumber(tier) or 0), 0, BRBP.TrackEnd())
-	data.xp = tier * BRBP.Config.TierXP
+	data.xp = BRBP.XPForTier(tier)
 	data.grantedTier = math.min(data.grantedTier or 0, tier)
 	data.premiumGranted = math.min(data.premiumGranted or 0, data.grantedTier)
 	BRBP.Save(ply)
@@ -344,6 +367,8 @@ function BRBP.Sync(ply)
 		weekly = SerializeQuests(data.weekly, "weekly"),
 		boostUntil = data.boostUntil,
 		premiumCost = BRBP.Config.PremiumXPCost,
+		parkourXP = data.parkourDay == BRBP.DayKey() and data.parkourXP or 0,
+		parkourCap = BRBP.Config.ParkourDailyCap,
 		beatrunXP = ply.GetXP and ply:GetXP() or 0
 	}
 
@@ -360,7 +385,7 @@ function BRBP.AddXP(ply, amount)
 	if not data or amount <= 0 then return end
 
 	local before = BRBP.GetTierForXP(data.xp)
-	data.xp = math.min(data.xp + math.floor(amount), BRBP.Config.TierXP * BRBP.TrackEnd())
+	data.xp = math.min(data.xp + math.floor(amount), BRBP.MaxXP())
 	local after = BRBP.GetTierForXP(data.xp)
 	ply:SetNW2Int("BRBP_XP", data.xp)
 	ply:SetNW2Int("BRBP_Tier", after)
@@ -429,6 +454,7 @@ function BRBP.Progress(ply, event, amount)
 end
 
 local lastParkour = {}
+local lastParkourPos = {}
 local parkourWindow = {}
 local diveState = {}
 local vaultState = {}
@@ -447,6 +473,42 @@ local DIVE_EVENTS = {
 	divestart = true,
 	diveidle = true
 }
+
+local function ParkourReward(ply, data, event)
+	local cfg = BRBP.Config
+	local bp = cfg.ParkourBPXP[event] or 0
+
+	if bp <= 0 then return 0 end
+
+	local chance = cfg.ParkourChance[event]
+
+	if chance and math.random() >= chance then return 0 end
+
+	if cfg.ParkourPosCheck[event] then
+		local id = Sid(ply)
+		local pos = ply:GetPos()
+		local last = lastParkourPos[id]
+
+		if last and last:DistToSqr(pos) < cfg.ParkourPosCheckDist ^ 2 then return 0 end
+
+		lastParkourPos[id] = pos
+	end
+
+	local day = BRBP.DayKey()
+
+	if data.parkourDay ~= day then
+		data.parkourDay = day
+		data.parkourXP = 0
+	end
+
+	bp = math.min(bp, cfg.ParkourDailyCap - (data.parkourXP or 0))
+
+	if bp <= 0 then return 0 end
+
+	data.parkourXP = (data.parkourXP or 0) + bp
+
+	return bp
+end
 
 local function AcceptParkour(ply, event, trusted)
 	if not IsValid(ply) or ply:IsBot() then return end
@@ -487,7 +549,7 @@ local function AcceptParkour(ply, event, trusted)
 	if not data then return end
 
 	local beforeTier = data.grantedTier
-	local bp = BRBP.Config.ParkourBPXP[event] or 0
+	local bp = ParkourReward(ply, data, event)
 
 	if bp > 0 then
 		BRBP.AddXP(ply, bp)
@@ -676,6 +738,7 @@ hook.Add("PlayerDisconnected", "BRBP_Leave", function(ply)
 	BRBP.Save(ply)
 	BRBP.Players[id] = nil
 	lastParkour[id] = nil
+	lastParkourPos[id] = nil
 	parkourWindow[id] = nil
 	diveState[id] = nil
 	vaultState[id] = nil

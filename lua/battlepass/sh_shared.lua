@@ -18,21 +18,49 @@ function BRBP.IsBonusTier(tier)
 	return (tier or 0) > (BRBP.Config.MaxTier or 30)
 end
 
-function BRBP.GetTierForXP(xp)
-	local tier = math.floor((xp or 0) / BRBP.Config.TierXP)
+function BRBP.TierCost(tier)
+	local cfg = BRBP.Config
 
-	return math.Clamp(tier, 0, BRBP.TrackEnd())
+	if tier > cfg.MaxTier then return cfg.BonusTierXP end
+
+	return cfg.TierBaseXP + cfg.TierStepXP * (tier - 1)
 end
 
-function BRBP.XPIntoTier(xp)
-	xp = xp or 0
-	local need = BRBP.Config.TierXP
+-- total XP needed to reach the tier
+function BRBP.XPForTier(tier)
+	local cfg = BRBP.Config
+	local main = math.min(tier, cfg.MaxTier)
+	local total = main * cfg.TierBaseXP + cfg.TierStepXP * main * (main - 1) / 2
 
-	if xp >= need * BRBP.TrackEnd() then
-		return need
+	return total + math.max(tier - cfg.MaxTier, 0) * cfg.BonusTierXP
+end
+
+function BRBP.MaxXP()
+	return BRBP.XPForTier(BRBP.TrackEnd())
+end
+
+function BRBP.GetTierForXP(xp)
+	xp = xp or 0
+	local tier = 0
+
+	while tier < BRBP.TrackEnd() and xp >= BRBP.XPForTier(tier + 1) do
+		tier = tier + 1
 	end
 
-	return xp % need
+	return tier
+end
+
+-- XP gathered inside the current tier and the cost of the next one
+function BRBP.XPIntoTier(xp)
+	local tier = BRBP.GetTierForXP(xp)
+
+	if tier >= BRBP.TrackEnd() then
+		local cost = BRBP.TierCost(tier)
+
+		return cost, cost
+	end
+
+	return (xp or 0) - BRBP.XPForTier(tier), BRBP.TierCost(tier + 1)
 end
 
 function BRBP.SeasonAt(now)

@@ -4,9 +4,12 @@ BRBP.Config = BRBP.Config or {}
 -- Season, SeasonName, SeasonEnds, WeekEpoch and BRBP.Tiers are filled from BRBP.Seasons by BRBP.ApplySeason (sh_shared).
 -- Bumping SaveGen wipes ALL player data including cosmetics; a new season does not need it.
 BRBP.Config.SaveGen = 1
-BRBP.Config.TierXP = 750
-BRBP.Config.MaxTier = 30
+-- tier N costs TierBaseXP + TierStepXP * (N - 1), bonus tiers after MaxTier cost BonusTierXP each
+BRBP.Config.TierBaseXP = 500
+BRBP.Config.TierStepXP = 35
+BRBP.Config.MaxTier = 50
 BRBP.Config.BonusTiers = 10
+BRBP.Config.BonusTierXP = 2500
 BRBP.Config.PremiumXPCost = 10000
 BRBP.Config.BoostMult = 1.25
 BRBP.Config.PremiumGroups = {
@@ -53,6 +56,29 @@ BRBP.Config.QuestEventGroups = {
 
 BRBP.Config.ParkourEventCooldown = 0.45
 BRBP.Config.MaxParkourEventsPerSec = 6
+-- BP XP from parkour moves per day (resets with daily quests); quest rewards are not limited
+BRBP.Config.ParkourDailyCap = 1500
+
+-- like Beatrun: these moves give BP XP only after moving ParkourPosCheckDist units from the last rewarded one
+BRBP.Config.ParkourPosCheckDist = 200
+BRBP.Config.ParkourPosCheck = {
+	vault = true,
+	vaultover = true,
+	vaultkong = true,
+	vaultonto = true,
+	vaultontohigh = true,
+	vaulthigh = true,
+	climb = true,
+	climbheave = true,
+	climbhard = true,
+	climbhard2 = true,
+	wallrunh = true,
+	wallrunv = true
+}
+
+BRBP.Config.ParkourChance = {
+	sidestep = 0.1
+}
 BRBP.Config.OpenBind = KEY_F8
 
 BRBP.Config.ChatCommands = {
@@ -207,35 +233,55 @@ BRBP.Seasons = {
 		ends = 1796083200, -- 2026-12-01 00:00 UTC
 		tiers = {
 			T({ { "xp", 50 } }, { { "xp", 150 }, { "cosmetic", "title_s2_afterburner" } }), -- 1
-			T({ { "cosmetic", "title_s2_rooftop" } }, { { "xp", 200 } }), -- 2
-			T({ { "xp", 75 } }, { { "cosmetic", "trail_s2_night" } }), -- 3
-			T({ { "cosmetic", "trail_s2_undertow" } }, { { "xp", 200 } }), -- 4
-			T({ { "xp", 100 } }, { { "boost", 3600 } }), -- 5
-			T({ { "cosmetic", "title_s2_onemore" } }, { { "cosmetic", "title_s2_grapple" } }), -- 6
-			T({ { "xp", 125 } }, { { "xp", 250 } }), -- 7
-			T({ { "cosmetic", "fx_ember" } }, { { "cosmetic", "fx_jump_ember" } }), -- 8
-			T({ { "xp", 150 } }, { { "xp", 250 } }), -- 9
-			T({ { "cosmetic", "trail_s2_ember" }, { "xp", 200 } }, { { "cosmetic", "title_s2_coyote" }, { "xp", 400 } }), -- 10
-			T({ { "cosmetic", "title_s2_pb" } }, { { "boost", 3600 } }), -- 11
-			T({ { "xp", 175 } }, { { "xp", 300 } }), -- 12
-			T({ { "xp", 200 } }, { { "cosmetic", "trail_s2_livewire" } }), -- 13
-			T({ { "xp", 200 } }, { { "xp", 300 } }), -- 14
-			T({ { "xp", 250 } }, { { "cosmetic", "title_s2_momentum" } }), -- 15
-			T({ { "xp", 250 } }, { { "boost", 7200 } }), -- 16
-			T({ { "cosmetic", "title_s2_frame" } }, { { "xp", 400 } }), -- 17
-			T({ { "xp", 300 } }, { { "xp", 400 } }), -- 18
-			T({ { "cosmetic", "trail_s2_leaf" } }, { { "xp", 450 } }), -- 19
-			T({ { "cosmetic", "title_s2_wind" }, { "xp", 400 } }, { { "xp", 600 } }), -- 20
-			T({ { "xp", 350 } }, { { "boost", 3600 } }), -- 21
-			T({ { "xp", 350 } }, { { "xp", 400 } }), -- 22
-			T({ { "cosmetic", "trail_s2_toxic" } }, { { "xp", 450 } }), -- 23
-			T({ { "xp", 400 } }, { { "xp", 500 } }), -- 24
-			T({ { "cosmetic", "title_s2_skill" } }, { { "xp", 600 } }), -- 25
-			T({ { "xp", 500 } }, { { "boost", 7200 } }), -- 26
-			T({ { "xp", 500 } }, { { "cosmetic", "trail_s2_sunset" } }), -- 27
-			T({ { "xp", 600 } }, { { "xp", 700 } }), -- 28
-			T({ { "cosmetic", "title_s2_season" } }, { { "xp", 800 } }), -- 29
-			T({ { "cosmetic", "trail_s2_tailwind" }, { "xp", 1000 } }, { { "xp", 1500 }, { "boost", 14400 } }) -- 30
+			T({ { "xp", 75 } }, { { "xp", 150 } }), -- 2
+			T({ { "cosmetic", "title_s2_rooftop" } }, { { "xp", 175 } }), -- 3
+			T({ { "xp", 100 } }, { { "cosmetic", "trail_s2_night" } }), -- 4
+			T({ { "xp", 125 } }, { { "xp", 225 } }), -- 5
+			T({ { "cosmetic", "trail_s2_undertow" } }, { { "xp", 250 } }), -- 6
+			T({ { "xp", 150 } }, { { "xp", 250 } }), -- 7
+			T({ { "xp", 150 } }, { { "boost", 3600 } }), -- 8
+			T({ { "cosmetic", "title_s2_onemore" } }, { { "cosmetic", "title_s2_grapple" } }), -- 9
+			T({ { "xp", 200 } }, { { "xp", 325 } }), -- 10
+			T({ { "xp", 200 } }, { { "xp", 350 } }), -- 11
+			T({ { "xp", 225 } }, { { "xp", 350 } }), -- 12
+			T({ { "cosmetic", "fx_ember" } }, { { "cosmetic", "fx_jump_ember" } }), -- 13
+			T({ { "xp", 250 } }, { { "xp", 400 } }), -- 14
+			T({ { "xp", 275 } }, { { "xp", 425 } }), -- 15
+			T({ { "cosmetic", "trail_s2_ember" }, { "xp", 200 } }, { { "cosmetic", "title_s2_coyote" }, { "xp", 400 } }), -- 16
+			T({ { "xp", 300 } }, { { "xp", 450 } }), -- 17
+			T({ { "cosmetic", "title_s2_pb" } }, { { "boost", 3600 } }), -- 18
+			T({ { "xp", 325 } }, { { "xp", 500 } }), -- 19
+			T({ { "xp", 350 } }, { { "xp", 525 } }), -- 20
+			T({ { "xp", 350 } }, { { "cosmetic", "trail_s2_livewire" } }), -- 21
+			T({ { "xp", 375 } }, { { "xp", 550 } }), -- 22
+			T({ { "xp", 375 } }, { { "xp", 575 } }), -- 23
+			T({ { "xp", 400 } }, { { "xp", 600 } }), -- 24
+			T({ { "xp", 425 } }, { { "cosmetic", "title_s2_momentum" } }), -- 25
+			T({ { "xp", 425 } }, { { "boost", 7200 } }), -- 26
+			T({ { "xp", 450 } }, { { "xp", 650 } }), -- 27
+			T({ { "cosmetic", "title_s2_frame" } }, { { "xp", 675 } }), -- 28
+			T({ { "xp", 475 } }, { { "xp", 700 } }), -- 29
+			T({ { "xp", 500 } }, { { "xp", 725 } }), -- 30
+			T({ { "cosmetic", "trail_s2_leaf" } }, { { "xp", 750 } }), -- 31
+			T({ { "xp", 525 } }, { { "xp", 750 } }), -- 32
+			T({ { "cosmetic", "title_s2_wind" }, { "xp", 400 } }, { { "xp", 775 } }), -- 33
+			T({ { "xp", 550 } }, { { "xp", 800 } }), -- 34
+			T({ { "xp", 575 } }, { { "boost", 3600 } }), -- 35
+			T({ { "xp", 575 } }, { { "xp", 850 } }), -- 36
+			T({ { "xp", 600 } }, { { "xp", 850 } }), -- 37
+			T({ { "cosmetic", "trail_s2_toxic" } }, { { "xp", 875 } }), -- 38
+			T({ { "xp", 625 } }, { { "xp", 900 } }), -- 39
+			T({ { "xp", 650 } }, { { "xp", 925 } }), -- 40
+			T({ { "xp", 650 } }, { { "xp", 950 } }), -- 41
+			T({ { "cosmetic", "title_s2_skill" } }, { { "xp", 950 } }), -- 42
+			T({ { "xp", 675 } }, { { "boost", 7200 } }), -- 43
+			T({ { "xp", 700 } }, { { "xp", 1000 } }), -- 44
+			T({ { "xp", 725 } }, { { "cosmetic", "trail_s2_sunset" } }), -- 45
+			T({ { "xp", 725 } }, { { "xp", 1050 } }), -- 46
+			T({ { "xp", 750 } }, { { "xp", 1050 } }), -- 47
+			T({ { "cosmetic", "title_s2_season" } }, { { "xp", 1075 } }), -- 48
+			T({ { "xp", 775 } }, { { "xp", 1100 } }), -- 49
+			T({ { "cosmetic", "trail_s2_tailwind" }, { "xp", 1000 } }, { { "xp", 1500 }, { "boost", 14400 } }) -- 50
 		}
 	},
 	[3] = {
@@ -244,42 +290,62 @@ BRBP.Seasons = {
 		ends = 1798761600, -- 2027-01-01 00:00 UTC
 		tiers = {
 			T({ { "xp", 50 } }, { { "xp", 150 }, { "cosmetic", "title_s3_frostbite" } }), -- 1
-			T({ { "cosmetic", "title_s3_snowball" } }, { { "xp", 200 } }), -- 2
-			T({ { "xp", 75 } }, { { "cosmetic", "trail_s3_blackice" } }), -- 3
-			T({ { "cosmetic", "trail_s3_frost" } }, { { "xp", 200 } }), -- 4
-			T({ { "xp", 100 } }, { { "boost", 3600 } }), -- 5
-			T({ { "cosmetic", "title_s3_coldstart" } }, { { "cosmetic", "title_s3_blizzard" } }), -- 6
-			T({ { "xp", 125 } }, { { "xp", 250 } }), -- 7
-			T({ { "cosmetic", "fx_snow" } }, { { "cosmetic", "fx_jump_frost" } }), -- 8
-			T({ { "xp", 150 } }, { { "xp", 250 } }), -- 9
-			T({ { "cosmetic", "trail_s3_candy" }, { "xp", 200 } }, { { "cosmetic", "title_s3_icebreaker" }, { "xp", 400 } }), -- 10
-			T({ { "cosmetic", "title_s3_cocoa" } }, { { "boost", 3600 } }), -- 11
-			T({ { "xp", 175 } }, { { "xp", 300 } }), -- 12
-			T({ { "xp", 200 } }, { { "cosmetic", "trail_s3_aurora" } }), -- 13
-			T({ { "xp", 200 } }, { { "xp", 300 } }), -- 14
-			T({ { "xp", 250 } }, { { "cosmetic", "title_s3_krampus" } }), -- 15
-			T({ { "xp", 250 } }, { { "boost", 7200 } }), -- 16
-			T({ { "cosmetic", "title_s3_angel" } }, { { "xp", 400 } }), -- 17
-			T({ { "xp", 300 } }, { { "xp", 400 } }), -- 18
-			T({ { "cosmetic", "trail_s3_pine" } }, { { "xp", 450 } }), -- 19
-			T({ { "cosmetic", "title_s3_whiteout" }, { "xp", 400 } }, { { "xp", 600 } }), -- 20
-			T({ { "xp", 350 } }, { { "boost", 3600 } }), -- 21
-			T({ { "xp", 350 } }, { { "xp", 400 } }), -- 22
-			T({ { "cosmetic", "trail_s3_tinsel" } }, { { "xp", 450 } }), -- 23
-			T({ { "xp", 400 } }, { { "xp", 500 } }), -- 24
-			T({ { "cosmetic", "title_s3_newyear" } }, { { "xp", 600 } }), -- 25
-			T({ { "xp", 500 } }, { { "boost", 7200 } }), -- 26
-			T({ { "xp", 500 } }, { { "cosmetic", "trail_s3_garland" } }), -- 27
-			T({ { "xp", 600 } }, { { "xp", 700 } }), -- 28
-			T({ { "cosmetic", "title_s3_season" } }, { { "xp", 800 } }), -- 29
-			T({ { "cosmetic", "fx_jump_firework" }, { "xp", 1000 } }, { { "cosmetic", "fx_confetti" }, { "xp", 1500 }, { "boost", 14400 } }) -- 30
+			T({ { "xp", 75 } }, { { "xp", 150 } }), -- 2
+			T({ { "cosmetic", "title_s3_snowball" } }, { { "xp", 175 } }), -- 3
+			T({ { "xp", 100 } }, { { "cosmetic", "trail_s3_blackice" } }), -- 4
+			T({ { "xp", 125 } }, { { "xp", 225 } }), -- 5
+			T({ { "cosmetic", "trail_s3_frost" } }, { { "xp", 250 } }), -- 6
+			T({ { "xp", 150 } }, { { "xp", 250 } }), -- 7
+			T({ { "xp", 150 } }, { { "boost", 3600 } }), -- 8
+			T({ { "cosmetic", "title_s3_coldstart" } }, { { "cosmetic", "title_s3_blizzard" } }), -- 9
+			T({ { "xp", 200 } }, { { "xp", 325 } }), -- 10
+			T({ { "xp", 200 } }, { { "xp", 350 } }), -- 11
+			T({ { "xp", 225 } }, { { "xp", 350 } }), -- 12
+			T({ { "cosmetic", "fx_snow" } }, { { "cosmetic", "fx_jump_frost" } }), -- 13
+			T({ { "xp", 250 } }, { { "xp", 400 } }), -- 14
+			T({ { "xp", 275 } }, { { "xp", 425 } }), -- 15
+			T({ { "cosmetic", "trail_s3_candy" }, { "xp", 200 } }, { { "cosmetic", "title_s3_icebreaker" }, { "xp", 400 } }), -- 16
+			T({ { "xp", 300 } }, { { "xp", 450 } }), -- 17
+			T({ { "cosmetic", "title_s3_cocoa" } }, { { "boost", 3600 } }), -- 18
+			T({ { "xp", 325 } }, { { "xp", 500 } }), -- 19
+			T({ { "xp", 350 } }, { { "xp", 525 } }), -- 20
+			T({ { "xp", 350 } }, { { "cosmetic", "trail_s3_aurora" } }), -- 21
+			T({ { "xp", 375 } }, { { "xp", 550 } }), -- 22
+			T({ { "xp", 375 } }, { { "xp", 575 } }), -- 23
+			T({ { "xp", 400 } }, { { "xp", 600 } }), -- 24
+			T({ { "xp", 425 } }, { { "cosmetic", "title_s3_krampus" } }), -- 25
+			T({ { "xp", 425 } }, { { "boost", 7200 } }), -- 26
+			T({ { "xp", 450 } }, { { "xp", 650 } }), -- 27
+			T({ { "cosmetic", "title_s3_angel" } }, { { "xp", 675 } }), -- 28
+			T({ { "xp", 475 } }, { { "xp", 700 } }), -- 29
+			T({ { "xp", 500 } }, { { "xp", 725 } }), -- 30
+			T({ { "cosmetic", "trail_s3_pine" } }, { { "xp", 750 } }), -- 31
+			T({ { "xp", 525 } }, { { "xp", 750 } }), -- 32
+			T({ { "cosmetic", "title_s3_whiteout" }, { "xp", 400 } }, { { "xp", 775 } }), -- 33
+			T({ { "xp", 550 } }, { { "xp", 800 } }), -- 34
+			T({ { "xp", 575 } }, { { "boost", 3600 } }), -- 35
+			T({ { "xp", 575 } }, { { "xp", 850 } }), -- 36
+			T({ { "xp", 600 } }, { { "xp", 850 } }), -- 37
+			T({ { "cosmetic", "trail_s3_tinsel" } }, { { "xp", 875 } }), -- 38
+			T({ { "xp", 625 } }, { { "xp", 900 } }), -- 39
+			T({ { "xp", 650 } }, { { "xp", 925 } }), -- 40
+			T({ { "xp", 650 } }, { { "xp", 950 } }), -- 41
+			T({ { "cosmetic", "title_s3_newyear" } }, { { "xp", 950 } }), -- 42
+			T({ { "xp", 675 } }, { { "boost", 7200 } }), -- 43
+			T({ { "xp", 700 } }, { { "xp", 1000 } }), -- 44
+			T({ { "xp", 725 } }, { { "cosmetic", "trail_s3_garland" } }), -- 45
+			T({ { "xp", 725 } }, { { "xp", 1050 } }), -- 46
+			T({ { "xp", 750 } }, { { "xp", 1050 } }), -- 47
+			T({ { "cosmetic", "title_s3_season" } }, { { "xp", 1075 } }), -- 48
+			T({ { "xp", 775 } }, { { "xp", 1100 } }), -- 49
+			T({ { "cosmetic", "fx_jump_firework" }, { "xp", 1000 } }, { { "cosmetic", "fx_confetti" }, { "xp", 1500 }, { "boost", 14400 } }) -- 50
 		}
 	}
 }
 
 for _, season in pairs(BRBP.Seasons) do
 	for n = 1, BRBP.Config.BonusTiers do
-		season.tiers[BRBP.Config.MaxTier + n] = T({ { "xp", 200 } }, { { "xp", 200 } })
+		season.tiers[BRBP.Config.MaxTier + n] = T({ { "xp", 400 } }, { { "xp", 400 } })
 	end
 end
 
