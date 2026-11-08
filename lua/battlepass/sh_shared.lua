@@ -231,15 +231,9 @@ function BRBP.RewardText(reward)
 
 		if not item then return reward[2] end
 
-		local typeKey = ({
-			title = "reward_title",
-			trail = "trail",
-			footstep = "footstep",
-			jump = "jump"
-		})[item.type] or "reward_title"
 		local name = item.short or item.text or item.name
 
-		return language.GetPhrase("beatrun_battlepass." .. typeKey) .. " " .. name
+		return language.GetPhrase("beatrun_battlepass.reward_" .. item.type) .. " " .. name
 	end
 
 	return tostring(kind)

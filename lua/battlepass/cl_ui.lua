@@ -144,13 +144,6 @@ local function DrawBar(x, y, w, h, frac, fill)
 	surface.DrawRect(x, y, math.floor(w * math.Clamp(frac, 0, 1)), h)
 end
 
-local cosmeticTypeLang = {
-	title = "reward_title",
-	trail = "trail",
-	footstep = "footstep",
-	jump = "jump"
-}
-
 local function RewardLines(rewards)
 	local lines = {}
 
@@ -161,7 +154,7 @@ local function RewardLines(rewards)
 		local item = r[1] == "cosmetic" and BRBP.Cosmetics[r[2]] or nil
 
 		if item then
-			lines[#lines + 1] = language.GetPhrase("beatrun_battlepass." .. (cosmeticTypeLang[item.type] or "reward_title"))
+			lines[#lines + 1] = language.GetPhrase("beatrun_battlepass.reward_" .. item.type)
 			lines[#lines + 1] = item.short or item.text or item.name
 		else
 			lines[#lines + 1] = BRBP.RewardText(r)
@@ -1023,7 +1016,7 @@ function BRBP.OpenLogchange()
 		draw.SimpleText(input.GetKeyName(BRBP.Config.OpenBind or KEY_F8) or "F8", "BeatrunUI", cx, y + m.keyH / 2, th.text.primary, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		y = y + m.keyH + S(8)
 
-		DrawMarked(string.gsub(language.GetPhrase("beatrun_battlepass.welcome_or"), "!BP", "{!BP}", 1), cx, y, BODY_FONT)
+		DrawMarked(language.GetPhrase("beatrun_battlepass.welcome_or"), cx, y, BODY_FONT)
 	end
 
 	logchange.OnKeyCodePressed = function(_, key)
